@@ -1,0 +1,401 @@
+---
+title: "C67 Report"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r include=FALSE}
+library(ggplot2)
+library(caret) # For data preprocessing
+library(readxl)
+library(tidyverse)
+library(xtable)
+library(knitr)
+library(MASS)
+suppressWarnings(library(car))
+library(broom)
+library(olsrr)
+library(ggpubr)
+library(tidyverse)
+library(readxl)
+library(ggthemes)
+library(RColorBrewer)
+library(corrplot)
+data <- read_excel("y:/BrownFat.xls")
+```
+
+
+# DETERMINANTS OF THE PRESENCE AND VOLUME OF BROWN FAT IN HUMAN
+### Group 21
+
+Lingfeng Su, 1005001597: Background and Significance, Exploratory Data Analysis
+
+Ting Lei, 1005813425: Model Selection, Model Validation/Diagnostics
+
+
+
+# Background and Significance
+
+## Abstract
+
+Brown fat, Brown adipose tissue (BAT), is known for aiding survival in a cold environment by allowing for better production of body heat in colder conditions. Until recently it was only discovered in small animals and newborn humans. In infants, this fat makes up about 5% of the body mass and is located on the back, along the upper half of the spine and toward the shoulders, and is of great importance in helping to avoid hypothermia, which contributes to approximately one million infant deaths each year. However, recent technological advances have managed to detect brown fat in adult humans given the subject has been exposed to a low ambient temperature. However, we do not know if low temperature is the only factor creating brown fat. Thus, the main purpose of the study is to examine the relationship between a number of factors and the presence/volume of brown fat. 
+
+Research Question: Which factors have the highest likelihood of stimulating the activation of brown adipose tissue in humans?
+
+## Variable Description
+
+-   Sex: sex of the patient (Female=1, Male=2).
+-   Diabetes: (No=0, Yes=1).
+-   Age: Age of the patient in years.
+-   Day: Day of the year.
+-   Month: Month of the exam.
+-   Ext_Temp: External Temperature.
+-   2D_Temp: Average.
+-   temperature of last 2 days.
+-   3D_Temp: Average temperature of last 3 days.
+-   7D_Temp: Average temperature of last 7 days.
+-   1M_Temp: Average temperature of last month.
+-   Season: Spring=1, Summer=2, Automn=3, Winter=4.
+-   Duration_Sunshine: Sunshine duration.
+-   Weight:in Kgs
+-   Size: Height in cms.
+-   BMI: Body Mass index.
+-   Glycemia.
+-   Lean Body Weight.
+-   Cancer_Status: (No=0, Yes=1).
+-   Cancer_Type: (No=0, lung=1, digestive=2, Oto-Rhino-Laryngology=3, breast=4, gynaecological(female)=5, genital (male)=6, urothelial=7, kidney=8, brain=9, skin=10, thyroid=11,prostate=12, non-Hodgkin lymphoma=13, Hodgkin=14, Kaposi=15, Myeloma=16,Leukemia=17, other=18).
+-   TSH: The patient's amount of Thyroid Stimulating Hormone
+-   BrownFat: (No=0, Yes=1).
+-   Total_Vol: Total volume of Brown Fat.
+
+# Exploratory Data Analysis
+
+## Loading the Data
+
+```{r}
+set.seed(1005813425)
+library("readxl")
+data = read_excel("y:/BrownFat.xls")
+```
+
+The data set contains 4800 observations. Depending on the information we obtain from the data set, there are 21 predictors we consider that may have an effect on the presence/volume of brown fat.
+
+## Data Cleaning
+
+```{r}
+#Renaming Weigth to Weight
+colnames(data)[14] = "Weight"
+#unique(data$Sex) # No bad entries
+#unique(data$Diabetes) # No bad entries
+#unique(data$Season) # No bad entries
+#Checking for N/A values
+#if (!any(is.na(data))) {
+#print("No NA values were found in the dataset")
+#}
+# Removing the TSH data, according to some studies TSH could be associated.
+# With brown fat production. So we are putting TSH back later as a separate
+# Analysis target.
+TSH <- data[data$TSH != "NA", c("Id", "TSH")]
+data <- data[,!(names(data) %in% c("TSH"))]
+# Cleaning up all cancer types that are not properly labelled. 
+data <- data[data$Cancer_Type != "NA",]
+#Removing Strange Ages
+#data[data$Age < 10,] #Found weird data when looking at the summary statistics.
+data = data[!(data$Id %in% c(2489,6875)),]
+#Checking for if there are any cases of prostate cancer in women. 
+#rows_to_remove <- subset(data, Cancer_Type == 12 & Sex == 1)
+#print(rows_to_remove) # No bad entries
+```
+
+The data cleaning process began by checking for improperly formatted data. Upon inspection, a few problems were identified. One of the issues was the misspelling of "weight," which was promptly fixed. Another issue was that the majority of the TSH (thyroid-stimulating hormone) data was labeled as N/A, so while it was decided not to remove TSH as a factor, a separate analysis on TSH to brown fat had to be performed. Finally, there were a couple of instances where the age of the subject was too low. As brown fat has been known to appear in human children, these data points were deemed redundant and subsequently removed. The data cleaning process ensured that the data set was free of any major formatting or data entry errors, allowing for a more accurate analysis of the data.
+
+Variables like TSH were looked into separately due to dirty data (many NA) and dropped due to low correlation. We felt that TSH might still be important but this data set did not contain enough information for us to continue looking into the relationship between TSH and Brown Fat. 
+
+## Quantitative features
+
+```{r}
+drop <- c("Month","Sex", "Id", "Diabetes", "Season", "Day", "Cancer_Status", "Cancer_Type", "BrownFat")
+df = data[,!(names(data) %in% drop)]
+corrplot(cor(df), method = "square")
+```
+
+We examined the correlation between the quantitative variables. We can see that there's heavy correlation among the temperature factors,and among the weight size BMI LBW factors.
+
+# Qualitative features
+
+```{r include=FALSE}
+colnames(data)[14] = "Weight"
+data$Sex <- factor(data$Sex, labels = c("Female", "Male"))
+data$BrownFat <- factor(data$BrownFat, labels = c("No BrownFat", "BrownFat"))
+data$Diabetes <- factor(data$Sex, labels = c("No Diabetic", "Diabetic"))
+data$Cancer_Status <- factor(data$Sex, labels = c("No", "Yes"))
+data$Season <- factor(data$Season, labels = c("Spring", "Summer",
+                                              "Automn", "Winter"))
+data$Cancer_Type <- factor(data$Cancer_Type,
+                           labels = c("No", "lung", "digestive",
+                                      "Oto-Rhino-Laryngology",
+                                      "breast", "gynaecological(female)",
+                                      "genital(male)", "urothelial",
+                                      "kidney", "brain", "skin", "thyroid",
+                                      "prostate", "non-Hodgkin lymphoma",
+                                      "Hodgkin", "Kaposi", "Myeloma",
+                                      "Leukemia", "other"))
+```
+
+```{r}
+ggplot(data, aes(x = cut(Ext_Temp, breaks = seq(-40, 40, 10)))) +
+  geom_bar(aes(fill = factor(BrownFat)), position = "dodge") +
+  scale_fill_manual(values = c("#999999", "#E69F00"), labels = c("No Brown Fat", "Brown Fat")) +
+  labs(x = "External Temperature", y = "Count", fill = "Brown Fat") +
+  ggtitle("Count of Brown Fat at Different External Temperatures")
+```
+
+We can see that at colder temperatures results in proportionally more brown fat.
+
+### TSH
+
+```{r}
+merged_data <- merge(TSH, data, by = "Id")
+merged_data$TSH <- as.numeric(merged_data$TSH)
+#correlation <- cor(merged_data$TSH, merged_data$Total_vol)
+#print(correlation)
+
+ggplot(merged_data, aes(x = TSH, y = Total_vol)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  xlab("TSH") +
+  ylab("Brown Fat")
+```
+
+Based on this graph we can say that TSH and Brown Fat level seems uncorrelated.
+
+### Sex
+
+```{r}
+data %>% 
+  ggplot(aes(x = Sex, fill = BrownFat)) +
+  geom_bar(width = 0.8, position = "dodge") +
+  scale_y_continuous(expand = c(0,0), limits = c(0,2500)) +
+  scale_fill_brewer(palette = "Set2") +
+  labs(title = "Sex") +
+  theme_bw()
+```
+
+As we can see that female have higher amounts of brown fat compared to male, suggesting that gender may be a factor in the presence or absence of brown fat
+
+### Diabetes
+
+```{r}
+data %>% 
+  ggplot(aes(x = Diabetes, fill = BrownFat)) +
+  geom_bar(width = 0.8, position = "dodge") +
+  scale_y_continuous(expand = c(0,0), limits = c(0,2500)) +
+  scale_fill_brewer(palette = "Set1") +
+  labs(title = "Diabetes") +
+  coord_flip() + 
+  theme_bw()
+```
+
+Although we notice a higher count of Non-Diabetic patients with BrownFat, we noticed the proportion of is still quiet small, so we concluded that there may not be much correlation between the two variables.
+
+### Cancer_Status
+
+```{r}
+data %>% 
+  ggplot(aes(x =Cancer_Status , fill =BrownFat )) +
+  geom_bar(width = 0.8, position = "stack") +
+  scale_y_continuous(expand = c(0,0), limits = c(0,2800)) +
+  scale_fill_brewer(palette = "Set3") +
+  labs(title = "Cancer_Status") +
+  theme_bw()
+```
+
+We can see that the number of patients with brown fat is similar, but there is a higher percentage in non-cancer patients
+
+### Cancer_Type
+
+```{r}
+data %>% 
+  ggplot(aes(x =Cancer_Type, fill = BrownFat)) +
+  geom_bar(width = 0.8, position = "dodge") +
+  scale_y_continuous(expand = c(0,0), limits = c(0,2000)) +
+  labs(title = "Cancer_Type") +
+  theme_bw() +
+  theme(axis.text.x.bottom = element_text(angle = 90, hjust = 1, vjust = 0.5))
+```
+
+Further examining the differences in the amount of brownfat in patients with different diseases, and mapping the observations, we see that cancer is not a factor in brownfat
+
+
+
+```{r include= FALSE}
+# Month
+data %>% 
+  ggplot(aes(x = Month, fill = BrownFat)) +
+  geom_bar(width = 0.8, position = "dodge") +
+  scale_y_continuous(expand = c(0,0)) +
+  labs(title = "Month") +
+  theme_bw() +
+  facet_wrap(~BrownFat) +
+  theme(axis.text.x.bottom = element_text(angle = 45, vjust = 0.5),
+        legend.position = "bottom")
+#The difference in the number of months between the non-brownfat group and the brown fat group was small, suggesting that the month was not a major factor affecting brownfat
+
+```
+
+
+
+
+```{r include= FALSE}
+# Season
+data %>% 
+  ggplot(aes(x = BrownFat, fill = BrownFat)) +
+  geom_bar(width = 0.8, position = "dodge") +
+  scale_y_continuous(expand = c(0,0)) +
+  labs(title = "Season") +
+  theme_bw() +
+  facet_wrap(~Season) +
+  theme(legend.position = "top")
+#The number of patients in the brownfat free group and the brown fat group was shown successively in four seasons, and it was found that there was little difference in each quarter, so it can be considered that the quarter is not a major factor affecting brownfat
+```
+
+
+
+
+
+```{r include= FALSE}
+# Day
+data %>% 
+  ggplot(aes(x = Day, fill = BrownFat)) +
+  geom_bar(width = 0.8) +
+  scale_y_continuous(expand = c(0,0)) +
+  labs(title = "Day") +
+  theme_bw() +
+  facet_wrap(~BrownFat) +
+  theme(legend.position = "top")
+#We examined how the different review fat groups changed with the number of days, and it was clear that day was not a significant factor in brown fat
+```
+
+
+
+## Analysis Summary
+
+Overall we discovered a correlation between ext_temp, 2D_Temp, 3D_Temp, 7D_Temp, 1M_Temp, and Duration_Sunshine; and a separate set of correlation between weight, size, BMI, and LBW. This suggests that we can choose one from each of the sets and still accurately represent the data. In terms of the correlation analysis between brownfat and the qualitative features we determined that only sex affected brownfat level, where being female increases brown fat count, while the rest of the features showed minimal correlations. 
+
+
+
+# Model Selection
+
+## Splitting the Data
+
+```{r}
+# Split the data into training and testing sets
+# using 10 folds CV
+set.seed(123)
+trainIndex <- createDataPartition(data$Total_vol, p = .9, list = FALSE)
+train <- data[trainIndex, ]
+test <- data[-trainIndex, ]
+```
+
+## Model Selection
+
+```{r include=FALSE}
+corr.mat <- cor(data[,c("Total_vol", "Age", "Ext_Temp","2D_Temp","3D_Temp","BMI","Duration_Sunshine","Weight", "Size","Glycemy","LBW")])
+print(corr.mat)
+```
+
+```{r}
+
+# Plot correlation matrix as a heatmap
+library(ggplot2)
+ggplot(data = reshape2::melt(corr.mat), aes(x = Var1, y = Var2, fill = value)) + 
+  geom_tile() + 
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+
+```
+
+First, we did the correlation analysis and check which variables are positively or negatively related to each other and the multicollinearity.
+
+From the result, we find out that the ExT_temp and 2D_temp 3D_temp are multicollinearity, and the "BMI" and "LBW" are multicollinearity with the weight. Then, we use BMI and delete weight in model variable.
+
+```{r include=FALSE}
+# STEPWISE LINEAR REGRESSION MODEL
+model1 <- lm(Total_vol ~ Sex + Diabetes + Age + Day + Month + Ext_Temp + Season + Duration_Sunshine+ Size + BMI + Glycemy + LBW + Cancer_Status + Cancer_Type, data = train)
+model_forward <- step(model1, direction = "forward") 
+summary(model_forward)
+significant_vars <- names(coef(model_forward))[summary(model_forward)$coefficients[, 4] < 0.05]
+significant_vars
+```
+
+We applied a stepwise linear regression model. Based on the R output, we selected variables with a significant p-value smaller than 0.05.
+From the result, we find out the "Sex", "Age", "Ext_Temp" and BMI are significant. Then the model is $$ Totalvol = \beta_0 + \beta_1 Sex + \beta_2 Age + \beta_3 ExtTemp + \beta_4 BMI $$
+
+```{r}
+
+model_subset <- lm(Total_vol ~ Sex  + Age + Ext_Temp  + BMI , data = train)
+summary(model_subset)
+predictions <- predict(model_subset, newdata = test)
+
+```
+
+And the $\beta_0 = 18.52436$ $\beta_1 =-3.58199$ $\beta_2 = -0.13733$ $\beta_4 = -0.17443$
+
+```{r}
+#add interaction
+model_inter <- lm(Total_vol ~ Sex  + Age + Ext_Temp  + BMI + 
+                    Sex *Age +Sex *Ext_Temp + Sex *BMI , data = train)
+
+summary(model_inter)
+
+predict2 <- predict(model_inter, newdata = test)
+```
+
+# Regression diagnosis
+
+```{r}
+# MSE
+lm.mse <- mean((test$Total_vol - predict2)^2)
+lm.mse
+```
+
+
+```{r}
+par(mfrow=c(2,2))
+plot(model_subset)
+```
+
+The following figure shows that the model does not satisfy the assumptions of linearity, normality, homoscedasticity, and the presence of outliers and strong influence points.
+
+```{r}
+vif(model_subset)
+```
+
+Since all Variables Inflation Factor are smaller than 10. Therefore, the results showed that there was no multicollinearity problem in the independent variables.
+
+```{r}
+plot2=ols_plot_dffits(model_subset)
+```
+
+The DFFITS plot has shows several influential points, which can significantly impact the regression results and potentially lead to biased conclusions. These points might suggest data issues or errors in the data collection process. Additionally, there is an imbalance in the number of observations for the two groups being analyzed (brown fat and no brown fat), with no brown fat points, such as observations 141, 289, and 628, potentially overpowering the brown fat points.
+
+# Discussion/Conclusion
+
+From our analysis, we can conclude that Sex, Age, External Temperature and BMI are the factors that will most likely activate the presence of brown fat.
+
+Some of the limitations were the dataset being relatively small for such a task since it only contains 4000 observations. Normally 4000 data points would be enough but these data points were heavily skewed towards no brown fat, which may affect the classifier when we train it. This heavy skew caused our model to heavily favour classifying everything as no brown fat, increasing our error. We can even observe that our most influential points are mostly no brown fat points showing that this skew did affect our regression in some ways. 
+
+An interesting future direction to study is to measure brown fat level again after a temperature delta is applied to the patient. This could help understand how brown fat level might increase after further drop in temperature. 
+Another angle is to focus more on TSH. This group of volunteers could not provide evidence that TSH has an impact on BAT level or production. However, according to Iwen, K. A., &Delp, M. S. in 2016, BAT tissue production/level is affected in some ways by TSH levels in the body. So perhaps with more focus on TSH level we can confirm the 2016 study. 
+
+
+# Reference
+
+Boston Children's Hospital. (n.d.). Infant hypothermia and a warmer for low-resource settings. Children's Hospital Boston. Retrieved April 10, 2023, from https://answers.childrenshospital.org/infant-hypothermia-warmer/#:~:text=Infant%20hypothermia%20contributes%20to%20approximately,%2C%20non%2Delectric%20infant%20warmer.
+WebMD. (2022, January 24). 
+
+Iwen, K. A., & Delp, M. S. (2016). Studying brown adipose tissue using histology and immunohistochemistry. Journal of visualized experiments: JoVE, (117), e54746. https://doi.org/10.3791/54746
+
+WebMD. (n.d.). Brown fat: What you need to know. Retrieved April 10, 2023, from https://www.webmd.com/diet/brown-fat-what-you-need-to-know#:~:text=Brown%20fat%2C%20also%20called%20brown,ways%20the%20body%20creates%20heat.
